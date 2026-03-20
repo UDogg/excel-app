@@ -66,6 +66,7 @@ class ExcelSpecService
             $columnName = $brokerSpec['column_name'];
 
             if (isset($updateMap[$columnName])) {
+                // Apply update specs even for formula columns
                 $updateSpec = $updateMap[$columnName];
 
                 $correctedSpec = [
