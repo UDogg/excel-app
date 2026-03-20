@@ -42,22 +42,17 @@ class EndorsementExport implements FromCollection, WithHeadings, WithMapping, Wi
         return $mapped;
     }
 
-    /**
-     * Format value based on field type for Excel compatibility
-     */
     protected function formatValue($value, array $spec)
     {
-        // Convert boolean Yes/No
         if ($spec['field_type'] === 'boolean') {
             return $value === 'Yes' ? 'Yes' : 'No';
         }
 
-        // Ensure dates are in Excel-recognizable format
         if ($spec['field_type'] === 'date' && !empty($value)) {
             return \PhpOffice\PhpSpreadsheet\Shared\Date::stringToExcel($value);
         }
 
-        // Keep numbers as numbers for calculations
+
         if ($spec['field_type'] === 'number' && is_numeric($value)) {
             return (float) $value;
         }
@@ -67,22 +62,16 @@ class EndorsementExport implements FromCollection, WithHeadings, WithMapping, Wi
 
     public function styles(Worksheet $sheet)
     {
-        // Style header row
         $sheet->getStyle('1:1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => 'solid', 'startColor' => ['rgb' => '4472C4']],
         ]);
 
-        // Freeze header row
         $sheet->freezePane('A2');
 
         return [];
     }
 
-    /**
-     * Apply data validation rules to dropdown columns
-     * This preserves the dropdown behavior in the generated Excel
-     */
     public function withDataValidations(Worksheet $sheet)
     {
         $headerRow = $this->headings();
@@ -92,7 +81,7 @@ class EndorsementExport implements FromCollection, WithHeadings, WithMapping, Wi
                 $columnLetter = $this->getColumnLetter($index + 1);
                 $formula = '"' . implode(',', $spec['allowed_values']) . '"';
 
-                // Apply validation to data rows (row 2 onwards)
+
                 $validation = $sheet->getCell($columnLetter . '2')->getDataValidation();
                 $validation->setType(DataValidation::TYPE_LIST)
                           ->setErrorStyle(DataValidation::STYLE_STOP)
@@ -100,16 +89,12 @@ class EndorsementExport implements FromCollection, WithHeadings, WithMapping, Wi
                           ->setShowDropDown(true)
                           ->setFormula1($formula);
 
-                // Copy validation down to all data rows
                 $lastRow = $this->data->count() + 1;
                 $sheet->getCell($columnLetter . '2')->getDataValidation()->setSqRef("{$columnLetter}2:{$columnLetter}{$lastRow}");
             }
         }
     }
 
-    /**
-     * Helper to convert column index to Excel letter
-     */
     protected function getColumnLetter(int $index): string
     {
         $letter = '';

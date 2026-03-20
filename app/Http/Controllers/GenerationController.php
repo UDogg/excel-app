@@ -47,10 +47,9 @@ class GenerationController extends Controller
                 'fields' => count($config)
             ]);
 
-            // Generate fake data
+
             $data = $this->fakeDataService->generateRows($config, $recordCount);
 
-            // Export to Excel with proper formatting
             $filename = 'endorsement_' . date('Y-m-d_H-i-s') . '.xlsx';
 
             return Excel::download(

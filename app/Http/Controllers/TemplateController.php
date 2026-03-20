@@ -16,17 +16,11 @@ class TemplateController extends Controller
         $this->excelSpecService = $excelSpecService;
     }
 
-    /**
-     * Show the upload form (Step 1)
-     */
     public function showUploadForm()
     {
         return view('templates.upload');
     }
 
-    /**
-     * Handle two-file upload and apply company updates to broker specs
-     */
     public function handleUpload(Request $request)
     {
         $request->validate([
@@ -35,7 +29,6 @@ class TemplateController extends Controller
         ]);
 
         try {
-            // DEBUG: Log request details (INSIDE method, not class body)
             Log::info('Upload request', [
                 'has_broker' => $request->hasFile('broker_file'),
                 'has_update' => $request->hasFile('update_file'),
@@ -47,23 +40,18 @@ class TemplateController extends Controller
                 'storage_writable' => is_writable(storage_path('app')),
             ]);
 
-            // Store files with original extensions preserved
             $brokerFile = $request->file('broker_file');
             $updateFile = $request->file('update_file');
 
-            // Generate safe filenames with original extensions
             $brokerFilename = 'broker_' . time() . '_' . uniqid() . '.' . $brokerFile->getClientOriginalExtension();
             $updateFilename = 'update_' . time() . '_' . uniqid() . '.' . $updateFile->getClientOriginalExtension();
 
-            // Store manually to ensure extension is preserved
             $brokerPath = $brokerFile->storeAs('templates', $brokerFilename, 'local');
             $updatePath = $updateFile->storeAs('templates', $updateFilename, 'local');
 
 
-            // NEW — normalizes all separators to the OS native one
             $brokerFullPath = Storage::disk('local')->path($brokerPath);
             $updateFullPath = Storage::disk('local')->path($updatePath);
-            // Debug logging for file paths
             Log::info('File storage results', [
                 'broker_stored_path' => $brokerPath,
                 'broker_full_path' => $brokerFullPath,
@@ -73,7 +61,6 @@ class TemplateController extends Controller
                 'update_file_exists' => file_exists($updateFullPath),
             ]);
 
-            // Verify files exist before parsing
             if (!file_exists($brokerFullPath)) {
                 throw new \RuntimeException("Broker file not found at: {$brokerFullPath}");
             }
@@ -81,16 +68,13 @@ class TemplateController extends Controller
                 throw new \RuntimeException("Update file not found at: {$updateFullPath}");
             }
 
-            // Apply updates using service
             $result = $this->excelSpecService->applyUpdatesToBrokerSpecs($brokerFullPath, $updateFullPath);
             $specs = $result['specs'];
             $summary = $result['summary'];
 
-            // Add filenames to summary for UI
             $summary['broker_filename'] = $brokerFile->getClientOriginalName();
             $summary['update_filename'] = $updateFile->getClientOriginalName();
 
-            // Store in session
             session([
                 'template_specs' => $specs,
                 'template_summary' => $summary,
@@ -119,9 +103,6 @@ class TemplateController extends Controller
         }
     }
 
-    /**
-     * Show the configuration form (Step 2)
-     */
     public function showConfigureForm()
     {
         $specs = session('template_specs');
@@ -139,9 +120,7 @@ class TemplateController extends Controller
         ]);
     }
 
-    /**
-     * Save field configuration (Step 2 → Step 3)
-     */
+
     public function saveConfig(Request $request)
     {
         $request->validate([
@@ -150,9 +129,9 @@ class TemplateController extends Controller
             'specs.*.field_type' => 'required|in:text,dropdown,date,email,number,boolean'
         ]);
 
-        // Sanitize and normalize specs
+
         $sanitizedSpecs = array_map(function($spec) {
-            // Convert comma-separated allowed_values to array
+
             if (!empty($spec['allowed_values']) && is_string($spec['allowed_values'])) {
                 $values = array_map('trim', explode(',', $spec['allowed_values']));
                 $spec['allowed_values'] = array_filter($values);
@@ -160,7 +139,7 @@ class TemplateController extends Controller
                 $spec['allowed_values'] = [];
             }
 
-            // Ensure field_type is valid
+            
             $validTypes = ['text', 'dropdown', 'date', 'email', 'number', 'boolean'];
             if (!in_array($spec['field_type'], $validTypes)) {
                 $spec['field_type'] = 'text';
