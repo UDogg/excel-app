@@ -19,14 +19,16 @@ class FakeDataService
     protected const PASSWORD_MIN_LENGTH = 8;
 
     // Valid values for dropdown/constrained fields
-    protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Parent', 'Dependent'];
+    // protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Parent', 'Dependent'];
+    protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Daughter', 'Son', 'Father', 'Mother', 'Father-in-law', 'Mother-in-law']; // Removed 'Child', 'Parent', 'Dependent'
     protected const VALID_EMPLOYEE_UNITS = ['HQ', 'North', 'South', 'East', 'West', 'Central', 'Branch-01', 'Branch-02'];
     protected const VALID_ZONES = ['North', 'South', 'East', 'West', 'Central'];
     protected const VALID_LOCATIONS = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata', 'Ahmedabad'];
     protected const VALID_MOBILE_COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+60', '+966', '+968', '+974'];
     protected const VALID_GENDERS = ['Male', 'Female', 'Other'];
     protected const VALID_DESIGNATIONS = ['Manager', 'Developer', 'Analyst', 'Consultant', 'Executive', 'Associate', 'Team Lead', 'Director', 'VP', 'CEO'];
-    protected const VALID_GRADES = ['L1', 'L2', 'L3', 'M1', 'M2', 'M3', 'S1', 'S2', 'S3'];
+    // protected const VALID_GRADES = ['L1', 'L2', 'L3', 'M1', 'M2', 'M3', 'S1', 'S2', 'S3'];
+    protected const VALID_GRADES = ['G1', 'G2', 'G3'];
     protected const VALID_LICENSE_TYPES = ['Professional', 'Commercial', 'Personal', 'Temporary', 'Permanent'];
     protected const VALID_ISSUING_AUTHORITIES = ['IRDAI', 'State Govt', 'Central Govt', 'Private Agency', 'Insurance Company'];
     protected const VALID_COVER_TYPES = ['Individual', 'Family Floater', 'Top-up', 'Critical Illness', 'Personal Accident'];
@@ -467,8 +469,32 @@ class FakeDataService
             return $this->faker->randomElement(self::VALID_DESIGNATIONS);
         }
         if ($this->isGradeField($name)) {
-            return $this->faker->randomElement(self::VALID_GRADES);
+        // Match backend salary-based grade logic for employer 18/5178
+            $salary = $context['Employee Annual Salary'] ?? 0;
+            if ($salary <= 1100000) {
+                return 'G1';
+            } elseif ($salary <= 2100000) {
+                return 'G2';
+            } else {
+                return 'G3';
+            }
         }
+
+        if ($this->isRelationshipField($name)) {
+            // Backend expects specific relationship values with IDs
+            $allowed = $spec['allowed_values'] ?? [];
+            $filtered = $this->filterByValidValues($allowed, self::VALID_RELATIONSHIPS);
+
+            // Weight 'Self' higher (80% of records should be employees)
+            if ($this->faker->boolean(80)) {
+                return 'Self';
+            }
+
+            return $this->faker->randomElement(
+                !empty($filtered) ? array_values($filtered) : ['Self']
+            );
+        }
+
         if ($this->isOccupationField($name)) {
             return $this->faker->randomElement(self::VALID_DESIGNATIONS);
         }
@@ -578,6 +604,19 @@ class FakeDataService
             );
         }
 
+        $gradeKey = $this->findKey($row, ['Employee Grade', 'employee grade']);
+        $salaryKey = $this->findKey($row, ['Employee Annual Salary', 'employee annual salary']);
+        if ($gradeKey && $salaryKey && isset($row[$gradeKey]) && isset($row[$salaryKey])) {
+            $salary = (int) $row[$salaryKey];
+            if ($salary <= 1100000) {
+                $row[$gradeKey] = 'G1';
+            } elseif ($salary <= 2100000) {
+                $row[$gradeKey] = 'G2';
+            } else {
+                $row[$gradeKey] = 'G3';
+            }
+        }
+
         // Constraint: Employee Code must match EMP##### pattern for lookup success
         $empCodeKey = $this->findKey($row, ['Employee Code', 'employee code']);
         if ($empCodeKey && isset($row[$empCodeKey]) && !preg_match('/^EMP\d{5}$/', $row[$empCodeKey])) {
@@ -592,7 +631,13 @@ class FakeDataService
             'Relation Of Appointee With Nominee'
         ]);
         if ($relKey && isset($row[$relKey]) && !in_array($row[$relKey], self::VALID_RELATIONSHIPS, true)) {
-            $row[$relKey] = 'Self'; // Safe default
+            // Map 'Child' to 'Daughter' or 'Son' based on gender
+            if ($row[$relKey] === 'Child') {
+                $genderKey = $this->findKey($row, ['Insured Member Gender', 'insured member gender']);
+                $row[$relKey] = ($genderKey && $row[$genderKey] === 'Female') ? 'Daughter' : 'Son';
+            } else {
+                $row[$relKey] = 'Self'; // Safe default
+            }
         }
 
         // Constraint: Nominee Contribution must be numeric 0-100
