@@ -129,6 +129,14 @@ class ExcelSpecService
 
     protected function analyzeColumn($sheet, string $columnName, string $columnLetter): array
     {
+        $dropdownColumns = [
+            'Suminsured',
+            'Employee Premium',
+            'Employer Premium',
+            'OPD Suminsured',
+            'OPD Employee Premium',
+            'OPD Employer Premium'
+        ];
         $spec = [
             'column_name' => $columnName,
             'field_type' => 'text',
@@ -152,12 +160,19 @@ class ExcelSpecService
             $spec['allowed_values'] = $this->parseDropdownFormula($formula, $sheet);
         }
 
-        $spec = $this->inferFieldType($spec, $columnName);
-
         $sampleValue = $sheet->getCell($cellCoordinate)->getCalculatedValue();
         if ($sampleValue && empty($spec['allowed_values'])) {
             $spec = $this->inferFromSample($spec, $sampleValue, $columnName);
         }
+        if (in_array($columnName, $dropdownColumns) && empty($spec['allowed_values'])) {
+        // Extract unique values from column to build dropdown list
+            $spec['field_type'] = 'dropdown';
+            $spec['allowed_values'] = $this->extractUniqueValuesFromColumn($sheet, $columnLetter);
+        }
+
+        $spec = $this->inferFieldType($spec, $columnName);
+
+
 
         return $spec;
     }
@@ -225,6 +240,24 @@ class ExcelSpecService
         }
 
         return $spec;
+    }
+
+    protected function extractUniqueValuesFromColumn($sheet, string $columnLetter): array
+    {
+        $values = [];
+        try {
+            foreach ($sheet->getColumnIterator($columnLetter, $columnLetter) as $col) {
+                foreach ($col->getCellIterator(2, 10) as $cell) { // Check rows 2-10 for sample values
+                    $value = trim($cell->getCalculatedValue());
+                    if (!empty($value) && !in_array($value, $values)) {
+                        $values[] = $value;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to extract column values: ' . $e->getMessage());
+        }
+        return $values;
     }
 
 

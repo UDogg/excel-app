@@ -81,11 +81,11 @@ class EndorsementExport implements WithMapping, WithStyles, ShouldAutoSize, With
             return (float) $value;
         }
 
-        // Dates: keep as string in ISO format (Excel will recognize it)
-        if (($spec['field_type'] ?? '') === 'date' && !empty($stringValue)) {
-            $timestamp = strtotime($stringValue);
+        // DATES: Never escape with apostrophe - Excel recognizes Y-m-d format
+        if (($spec['field_type'] ?? '') === 'date' && !empty($value)) {
+            $timestamp = strtotime($value);
             if ($timestamp !== false) {
-                return date('Y-m-d', $timestamp);
+                return date('Y-m-d', $timestamp); // Return clean date, NO apostrophe
             }
         }
 

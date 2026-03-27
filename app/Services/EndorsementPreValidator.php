@@ -1,5 +1,5 @@
-// app/Services/EndorsementPreValidator.php
 <?php
+// app/Services/EndorsementPreValidator.php
 
 namespace App\Services;
 

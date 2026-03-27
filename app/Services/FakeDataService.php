@@ -154,6 +154,7 @@ class FakeDataService
         $allowedValues = $spec['allowed_values'] ?? [];
 
         return match ($type) {
+            // DROPDOWN: ALWAYS use allowed_values from spec (includes Suminsured, Premiums, etc.)
             'dropdown' => $this->generateDropdownValue($name, $allowedValues),
             'boolean' => $this->generateBooleanValue(),
             'date' => $this->generateConstrainedDate($name, $context),
@@ -185,6 +186,10 @@ class FakeDataService
             return $this->getFallbackForDropdown($name);
         }
 
+        if (!empty($allowedValues)) {
+            return $this->faker->randomElement($allowedValues);
+        }
+
         // Apply business rule filters based on field name
         $filtered = match (true) {
             $this->isRelationshipField($name) => $this->filterByValidValues($allowedValues, self::VALID_RELATIONSHIPS),
@@ -208,10 +213,10 @@ class FakeDataService
     protected function getFallbackForDropdown(string $name): string
     {
         return match (true) {
-            $this->isRelationshipField($name) => 'Self',
-            $this->isGenderField($name) => 'Male',
-            $this->isZoneField($name) => 'North',
-            $this->isUnitField($name) => 'HQ',
+            $this->isRelationshipField($name) => $this->faker->randomElement(self::VALID_RELATIONSHIPS),
+            $this->isGenderField($name) => $this->faker->randomElement(self::VALID_GENDERS),
+            $this->isZoneField($name) => $this->faker->randomElement(self::VALID_ZONES),
+            $this->isUnitField($name) => $this->faker->randomElement(self::VALID_EMPLOYEE_UNITS),
             $this->isBooleanLikeField($name) => $this->faker->randomElement(['Yes', 'No']),
             default => 'Default',
         };
@@ -703,6 +708,27 @@ class FakeDataService
                     '-' . self::MAX_ENDORSEMENT_DAYS_OLD . ' days',
                     'now'
                 )->format('Y-m-d');
+            }
+        }
+            // ✅ ENFORCE Yes/No FOR ALL BOOLEAN FIELDS
+        $booleanFields = [
+            'Is Demo Email',
+            'Should Verify Email',
+            'Is Dummy Mobile',
+            'To Hide Mobile',
+            'Is Dummy Email',
+            'To Hide Email',
+            'Is VIP Employee',
+            'Has Death Certificate'
+        ];
+
+        foreach ($booleanFields as $boolField) {
+            $fieldKey = $this->findKey($row, [$boolField, strtolower($boolField)]);
+            if ($fieldKey && isset($row[$fieldKey])) {
+                // Force to Yes or No if not already valid
+                if (!in_array($row[$fieldKey], ['Yes', 'No'], true)) {
+                    $row[$fieldKey] = $this->faker->randomElement(['Yes', 'No']);
+                }
             }
         }
 

@@ -20,7 +20,7 @@ class AppServiceProvider extends ServiceProvider
             //  $seed = null; // No seed for true randomness in production
             //  $seed = 12345; // Fixed seed for consistent data during development/testing
             //  $seed = env('FAKE_DATA_SEED', null); // Use env variable for flexibility
-            return new FakeDataService($seed);
+            return new FakeDataService(null);
         });
 
         // ExcelSpecService - Singleton (no state, safe to share)
