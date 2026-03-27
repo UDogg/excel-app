@@ -4,12 +4,18 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+
 
 class EndorsementPreValidator
 {
+    // protected const VALID_RELATIONSHIPS = [
+    //     'Self', 'Spouse', 'Daughter', 'Son',
+    //     'Father', 'Mother', 'Father-in-law', 'Mother-in-law'
+    // ];
+
     protected const VALID_RELATIONSHIPS = [
-        'Self', 'Spouse', 'Daughter', 'Son',
-        'Father', 'Mother', 'Father-in-law', 'Mother-in-law'
+        'Self', 'Spouse'
     ];
 
     protected const VALID_GRADES = ['G1', 'G2', 'G3'];
@@ -21,6 +27,15 @@ class EndorsementPreValidator
      */
     public function validateRows(array $rows, int $employerId = 18): array
     {
+        $code = $row['Employee Code'] ?? null;
+
+        if ($code && !DB::table('master_employees')
+            ->where('employer_id', $employerId)
+            ->where('code', $code)
+            ->exists()) {
+
+            $errors[] = "Employee not found: {$code}";
+        }
         $validRows = [];
         $invalidRows = [];
         $errors = [];
@@ -64,11 +79,10 @@ class EndorsementPreValidator
     {
         $errors = [];
 
-        // Required: Employee Code (EMP##### pattern)
-        $empCode = $row['Employee Code'] ?? '';
-        if (empty($empCode) || !preg_match('/^EMP\d{5}$/', $empCode)) {
-            $errors[] = 'Employee Code must match EMP##### pattern';
-        }
+        // $empCode = $row['Employee Code'] ?? '';
+        // if (empty($empCode) || !preg_match('/^EMP\d{5}$/', $empCode)) {
+        //     $errors[] = 'Employee Code must match EMP##### pattern';
+        // }
 
         // Required for Addition: Email
         $email = $row['Employee Email'] ?? '';
@@ -150,10 +164,10 @@ class EndorsementPreValidator
             }
 
             // Fix employee code format
-            $codeKey = $this->findKey($row, 'Employee Code');
-            if ($codeKey && !preg_match('/^EMP\d{5}$/', $row[$codeKey])) {
-                $rows[$index][$codeKey] = 'EMP' . str_pad($index + 1, 5, '0', STR_PAD_LEFT);
-            }
+            // $codeKey = $this->findKey($row, 'Employee Code');
+            // if ($codeKey && !preg_match('/^EMP\d{5}$/', $row[$codeKey])) {
+            //     $rows[$index][$codeKey] = 'EMP' . str_pad($index + 1, 5, '0', STR_PAD_LEFT);
+            // }
         }
 
         return $rows;

@@ -20,7 +20,10 @@ class FakeDataService
 
     // Valid values for dropdown/constrained fields
     // protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Parent', 'Dependent'];
-    protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Daughter', 'Son', 'Father', 'Mother', 'Father-in-law', 'Mother-in-law']; // Removed 'Child', 'Parent', 'Dependent'
+    // protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Daughter', 'Son', 'Father', 'Mother', 'Father-in-law', 'Mother-in-law']; // Removed 'Child', 'Parent', 'Dependent'
+    protected const VALID_RELATIONSHIPS = [
+        'Self', 'Spouse'
+    ];
     protected const VALID_EMPLOYEE_UNITS = ['HQ', 'North', 'South', 'East', 'West', 'Central', 'Branch-01', 'Branch-02'];
     protected const VALID_ZONES = ['North', 'South', 'East', 'West', 'Central'];
     protected const VALID_LOCATIONS = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata', 'Ahmedabad'];
@@ -41,6 +44,19 @@ class FakeDataService
         'max' => 500000,
         'ctc_min' => 20000,
         'ctc_max' => 800000,
+    ];
+
+    protected array $realEmployeeCodes = [
+        'dec051201',
+        'dec051202',
+        'Emptest051001',
+        'Emptest051002',
+        'Emptest051003',
+        'NTX23794',
+        'Emp091001',
+        'Emp091002',
+        '101',
+        '2112'
     ];
 
     protected const SUMINSURED_RANGES = [
@@ -249,8 +265,12 @@ class FakeDataService
         }
 
         // Effective Date / Inception: must be before policy end (~1 year from now)
-        if ($this->isEffectiveDateField($name) || $this->isInceptionField($name)) {
-            return $this->faker->dateTimeBetween('now', '+11 months')->format('Y-m-d');
+        // if ($this->isEffectiveDateField($name) || $this->isInceptionField($name)) {
+        //     return $this->faker->dateTimeBetween('now', '+11 months')->format('Y-m-d');
+        // }
+
+        if ($this->isEffectiveDateField($name)) {
+            return ''; // Always blank — backend calculates this
         }
 
         // Data Received On: within endorsement window + ISO format
@@ -335,6 +355,13 @@ class FakeDataService
 
     protected function generateConstrainedNumber(string $name, array $spec)
     {
+            $name = strtolower($name);
+
+        // 🔒 SAFETY GUARD PATCH: If this is actually a dropdown field, DO NOT generate a number
+        if (($spec['field_type'] ?? null) === 'dropdown' && !empty($spec['allowed_values'])) {
+            // Function signature: generateDropdownValue(string $name, array $allowedValues)
+            return $this->generateDropdownValue($name, $spec['allowed_values']);
+        }
         $maxLength = $spec['max_length'] ?? null;
 
         // Mobile No Code: valid country codes only
@@ -405,11 +432,17 @@ class FakeDataService
             );
         }
 
-        // Employee Code: EMP##### format
-        if ($this->isEmployeeCodeField($name)) {
-            return strtoupper($this->faker->bothify('EMP#####'));
-        }
+        // Employee Code: E##### format
+        // if ($this->isEmployeeCodeField($name)) {
+        //     // From testing, we know that the backend lookup for employee code is very strict on format. To ensure that generated codes pass validation and are recognized as valid employees, we will enforce the E##### pattern here.
+        //     return strtoupper($this->faker->bothify('E#####'));
+        // }
+        // SAFETY PATCH: Use a fixed set of known valid employee codes to ensure cross-field validations pass and we get realistic data for employee-related fields. This is necessary because the backend has strict validation and lookup for employee codes, and random generation may produce codes that fail validation, causing cascading failures in related fields (like
+        // Harcode pull from database query. In a real implementation, we would pull this list from the database or a config file to ensure it stays up to date with actual valid employee codes in the system.
 
+        if ($this->isEmployeeCodeField($name)) {
+            return $this->faker->randomElement($this->realEmployeeCodes);
+        }
         // Family/Installment numbers: small positive integers
         if ($this->isFamilyNumberField($name) || $this->isInstallmentField($name)) {
             return $this->faker->numberBetween(1, 12);
@@ -418,6 +451,10 @@ class FakeDataService
         // Variables in Salary / Number of Time Salary: small integers
         if (str_contains($name, 'variables in salary') || str_contains($name, 'number of time salary')) {
             return $this->faker->numberBetween(1, 5);
+        }
+
+        if (str_contains($name, 'employment type')) {
+            return $this->faker->randomElement(['Permanent', 'Probationary']);
         }
 
         // Default numeric with optional max length
@@ -491,9 +528,11 @@ class FakeDataService
             $filtered = $this->filterByValidValues($allowed, self::VALID_RELATIONSHIPS);
 
             // Weight 'Self' higher (80% of records should be employees)
-            if ($this->faker->boolean(80)) {
-                return 'Self';
-            }
+            // if ($this->faker->boolean(80)) {
+            //     return 'Self';
+            // }
+
+            return $this->faker->randomElement(['Self', 'Spouse']);
 
             return $this->faker->randomElement(
                 !empty($filtered) ? array_values($filtered) : ['Self']
@@ -577,6 +616,21 @@ class FakeDataService
 
     protected function applyCrossFieldValidations(array $row, array $specs, array $context): array
     {
+        $empDobKey = $this->findKey($row, ['Employee DOB']);
+        $domKey = $this->findKey($row, ['Date of Marriage']);
+
+        if ($empDobKey && $domKey &&
+            !empty($row[$empDobKey]) &&
+            !empty($row[$domKey])
+        ) {
+            $minMarriage = date('Y-m-d', strtotime('+18 years', strtotime($row[$empDobKey])));
+
+            if ($row[$domKey] < $minMarriage) {
+                $row[$domKey] = $this->faker
+                    ->dateTimeBetween($minMarriage, '-1 day')
+                    ->format('Y-m-d');
+            }
+        }
         // Constraint: Employee DOB & DOJ cannot be same + DOJ must be after DOB + at least 18 years after DOB
         $dobKey = $this->findKey($row, ['Employee DOB', 'employee dob']);
         $dojKey = $this->findKey($row, ['Employee Date of Joining', 'employee date of joining', 'DOJ', 'doj']);
@@ -597,6 +651,27 @@ class FakeDataService
                 $maxDojDate = date('Y-m-d', strtotime('-1 day'));
 
                 $row[$dojKey] = $this->faker->dateTimeBetween($minDojDate, $maxDojDate)->format('Y-m-d');
+            }
+        }
+        $relKey = $this->findKey($row, [
+            'Relationship with Employee',
+            'relationship with employee',
+            'Relationship With Insured',
+            'Relation Of Appointee With Nominee'
+        ]);
+        if (($row[$relKey] ?? '') === 'Self') {
+            $mirrors = [
+                'Insured Member First Name' => 'Employee First Name',
+                'Insured Member Last Name'  => 'Employee Last Name',
+                'Insured Member Gender'     => 'Employee Gender',
+                'Insured Member DOB'        => 'Employee DOB',
+            ];
+            foreach ($mirrors as $memberField => $empField) {
+                $memberKey = $this->findKey($row, [$memberField]);
+                $empKey    = $this->findKey($row, [$empField]);
+                if ($memberKey && $empKey && !empty($row[$empKey])) {
+                    $row[$memberKey] = $row[$empKey];
+                }
             }
         }
 
@@ -623,18 +698,13 @@ class FakeDataService
         }
 
         // Constraint: Employee Code must match EMP##### pattern for lookup success
-        $empCodeKey = $this->findKey($row, ['Employee Code', 'employee code']);
-        if ($empCodeKey && isset($row[$empCodeKey]) && !preg_match('/^EMP\d{5}$/', $row[$empCodeKey])) {
-            $row[$empCodeKey] = strtoupper($this->faker->bothify('EMP#####'));
-        }
+        // $empCodeKey = $this->findKey($row, ['Employee Code', 'employee code']);
+        // if ($empCodeKey && isset($row[$empCodeKey]) && !preg_match('/^EMP\d{5}$/', $row[$empCodeKey])) {
+        //     $row[$empCodeKey] = strtoupper($this->faker->bothify('EMP#####'));
+        // }
 
         // Constraint: Relationship must be covered by policy
-        $relKey = $this->findKey($row, [
-            'Relationship with Employee',
-            'relationship with employee',
-            'Relationship With Insured',
-            'Relation Of Appointee With Nominee'
-        ]);
+
         if ($relKey && isset($row[$relKey]) && !in_array($row[$relKey], self::VALID_RELATIONSHIPS, true)) {
             // Map 'Child' to 'Daughter' or 'Son' based on gender
             if ($row[$relKey] === 'Child') {
@@ -677,7 +747,7 @@ class FakeDataService
         $effKey = $this->findKey($row, ['Effective Date', 'effective date', 'Cover Effective Date', 'cover effective date']);
         if ($effKey && isset($row[$effKey])) {
             $policyEnd = date('Y-m-d', strtotime('+1 year'));
-            if ($row[$effKey] >= $policyEnd) {
+            if ($effKey && !empty($row[$effKey])) {
                 $row[$effKey] = $this->faker->dateTimeBetween('now', '+11 months')->format('Y-m-d');
             }
         }

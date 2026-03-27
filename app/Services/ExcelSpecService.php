@@ -215,7 +215,13 @@ class ExcelSpecService
     {
         $name = strtolower($columnName);
 
-        if (preg_match('/\b(dob|date|joining|marriage|expiry|inception|effective|issuance|license)\b/', $name)) {
+        if ($spec['field_type'] === 'dropdown') {
+            return $spec;
+        }
+
+    $name = strtolower($columnName);
+
+        if (preg_match('/\b(dob|date|joining|marriage|expiry|inception|effective|issuance|license|data received on)\b/', $name)) {
             $spec['field_type'] = 'date';
             return $spec;
         }
