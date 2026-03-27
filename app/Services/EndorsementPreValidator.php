@@ -15,7 +15,7 @@ class EndorsementPreValidator
     // ];
 
     protected const VALID_RELATIONSHIPS = [
-        'Self', 'Spouse'
+        'Self'
     ];
 
     protected const VALID_GRADES = ['G1', 'G2', 'G3'];

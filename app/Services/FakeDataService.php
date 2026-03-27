@@ -16,13 +16,13 @@ class FakeDataService
     // =========================================================================
 
     protected const MAX_ENDORSEMENT_DAYS_OLD = 90;
-    protected const PASSWORD_MIN_LENGTH = 8;
+    // protected const PASSWORD_MIN_LENGTH = 8;
 
     // Valid values for dropdown/constrained fields
     // protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Parent', 'Dependent'];
     // protected const VALID_RELATIONSHIPS = ['Self', 'Spouse', 'Daughter', 'Son', 'Father', 'Mother', 'Father-in-law', 'Mother-in-law']; // Removed 'Child', 'Parent', 'Dependent'
     protected const VALID_RELATIONSHIPS = [
-        'Self', 'Spouse'
+        'Self'
     ];
     protected const VALID_EMPLOYEE_UNITS = ['HQ', 'North', 'South', 'East', 'West', 'Central', 'Branch-01', 'Branch-02'];
     protected const VALID_ZONES = ['North', 'South', 'East', 'West', 'Central'];
@@ -37,6 +37,10 @@ class FakeDataService
     protected const VALID_COVER_TYPES = ['Individual', 'Family Floater', 'Top-up', 'Critical Illness', 'Personal Accident'];
     protected const VALID_FLEX_PLANS = ['Basic', 'Standard', 'Premium', 'Platinum', 'Custom'];
     protected const VALID_SALUTATIONS = ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.', 'Mx.'];
+    protected const PASSWORD_MIN_LENGTH = 10;
+    protected array $usedEmployeeCodes = [];
+    protected int $employeeIndex = 0;
+    protected array $rowContext = [];
 
     // Salary/premium ranges (INR)
     protected const SALARY_RANGES = [
@@ -96,6 +100,7 @@ class FakeDataService
     public function generateRow(array $specs, array $contextOverrides = []): array
     {
         $row = [];
+        $this->rowContext = [];
         $context = $contextOverrides;
 
         // Phase 1: Generate initial values for all fields
@@ -117,6 +122,29 @@ class FakeDataService
         // Phase 3: Final sanitization and format enforcement
         $row = $this->sanitizeRow($row, $specs);
 
+        $passwordKey = $this->findKey($row, ['Password']);
+
+        if ($passwordKey) {
+            logger('Final password in row: ' . $row[$passwordKey]);
+        }
+
+        $relKey = $this->findKey($row, ['Relationship with Employee']);
+
+        if ($relKey && ($row[$relKey] ?? '') === 'Self') {
+
+            $empDobKey = $this->findKey($row, ['Employee DOB']);
+            $memberDobKey = $this->findKey($row, ['Insured Member DOB']);
+
+            if ($empDobKey && $memberDobKey && !empty($row[$empDobKey])) {
+                $row[$memberDobKey] = $row[$empDobKey];
+            }
+        }
+        $empDobKey = $this->findKey($row, ['Employee DOB']);
+        $memberDobKey = $this->findKey($row, ['Insured Member DOB']);
+
+        if ($empDobKey && $memberDobKey) {
+            $row[$memberDobKey] = $row[$empDobKey];
+        }
         return $row;
     }
 
@@ -190,6 +218,19 @@ class FakeDataService
             'email' => $this->faker->safeEmail(),
             default => '',
         };
+    }
+
+    // Generate employee code from a fixed set of known valid codes to ensure cross-field validations pass and we get realistic data for employee-related fields. This is necessary because the backend has strict validation and lookup for employee codes, and random generation may produce codes that fail validation, causing cascading failures in related fields (like DOB/DOJ).
+    // =========================================================================
+    protected function generateEmployeeCode(): string
+    {
+        $code = $this->realEmployeeCodes[
+            $this->employeeIndex % count($this->realEmployeeCodes)
+        ];
+
+        $this->employeeIndex++;
+
+        return $code;
     }
 
     // -------------------------------------------------------------------------
@@ -301,8 +342,19 @@ class FakeDataService
         }
 
         // Employee DOB: 18-65 years old
-        if ($this->isEmployeeDobField($name)) {
-            return $this->faker->dateTimeBetween('-65 years', '-18 years')->format('Y-m-d');
+        // if ($this->isEmployeeDobField($name)) {
+        //     return $this->faker->dateTimeBetween('-65 years', '-18 years')->format('Y-m-d');
+        // }
+        if ($this->isEmployeeDobField($name) || $this->isMemberDobField($name) || $this->isNomineeDobField($name)) {
+
+            // Generate once per row
+            if (!isset($this->rowContext['dob'])) {
+                $this->rowContext['dob'] = $this->faker
+                    ->dateTimeBetween('-60 years', '-21 years')
+                    ->format('Y-m-d');
+            }
+
+            return $this->rowContext['dob'];
         }
 
         // Employee DOJ: 1-20 years ago (DOB divergence handled in cross-validation)
@@ -311,12 +363,12 @@ class FakeDataService
         }
 
         // Insured/Nominee DOB: broader age range
-        if ($this->isInsuredMemberDobField($name)) {
-            return $this->faker->dateTimeBetween('-80 years', 'now')->format('Y-m-d');
-        }
-        if ($this->isNomineeDobField($name)) {
-            return $this->faker->dateTimeBetween('-70 years', 'now')->format('Y-m-d');
-        }
+        // if ($this->isInsuredMemberDobField($name)) {
+        //     return $this->faker->dateTimeBetween('-80 years', 'now')->format('Y-m-d');
+        // }
+        // if ($this->isNomineeDobField($name)) {
+        //     return $this->faker->dateTimeBetween('-70 years', 'now')->format('Y-m-d');
+        // }
 
         // Insurer dates (endorsement/correction/removal)
         if ($this->isInsurerDateField($name)) {
@@ -523,20 +575,20 @@ class FakeDataService
         }
 
         if ($this->isRelationshipField($name)) {
-            // Backend expects specific relationship values with IDs
-            $allowed = $spec['allowed_values'] ?? [];
-            $filtered = $this->filterByValidValues($allowed, self::VALID_RELATIONSHIPS);
 
-            // Weight 'Self' higher (80% of records should be employees)
-            // if ($this->faker->boolean(80)) {
-            //     return 'Self';
-            // }
+        // temporarily simplified to just return Self since the backend validation is currently strict and doesn't recognize other relationships, causing failures in related fields. In a real implementation, we would want to support the full range of relationships and ensure that the backend validation is updated accordingly.
+            // $allowed = $spec['allowed_values'] ?? [];
 
-            return $this->faker->randomElement(['Self', 'Spouse']);
+            // $filtered = $this->filterByValidValues(
+            //     $allowed,
+            //     self::VALID_RELATIONSHIPS
+            // );
 
-            return $this->faker->randomElement(
-                !empty($filtered) ? array_values($filtered) : ['Self']
-            );
+            // $choices = !empty($filtered)
+            //     ? array_values($filtered)
+            //     : ['Self', 'Spouse'];
+            return 'Self';
+            // return $this->faker->randomElement($choices);
         }
 
         if ($this->isOccupationField($name)) {
@@ -653,27 +705,6 @@ class FakeDataService
                 $row[$dojKey] = $this->faker->dateTimeBetween($minDojDate, $maxDojDate)->format('Y-m-d');
             }
         }
-        $relKey = $this->findKey($row, [
-            'Relationship with Employee',
-            'relationship with employee',
-            'Relationship With Insured',
-            'Relation Of Appointee With Nominee'
-        ]);
-        if (($row[$relKey] ?? '') === 'Self') {
-            $mirrors = [
-                'Insured Member First Name' => 'Employee First Name',
-                'Insured Member Last Name'  => 'Employee Last Name',
-                'Insured Member Gender'     => 'Employee Gender',
-                'Insured Member DOB'        => 'Employee DOB',
-            ];
-            foreach ($mirrors as $memberField => $empField) {
-                $memberKey = $this->findKey($row, [$memberField]);
-                $empKey    = $this->findKey($row, [$empField]);
-                if ($memberKey && $empKey && !empty($row[$empKey])) {
-                    $row[$memberKey] = $row[$empKey];
-                }
-            }
-        }
 
         // Constraint: Suminsured must match policy (minimum threshold)
         $siKey = $this->findKey($row, ['Suminsured', 'suminsured', 'Sum Insured', 'sum insured']);
@@ -704,16 +735,6 @@ class FakeDataService
         // }
 
         // Constraint: Relationship must be covered by policy
-
-        if ($relKey && isset($row[$relKey]) && !in_array($row[$relKey], self::VALID_RELATIONSHIPS, true)) {
-            // Map 'Child' to 'Daughter' or 'Son' based on gender
-            if ($row[$relKey] === 'Child') {
-                $genderKey = $this->findKey($row, ['Insured Member Gender', 'insured member gender']);
-                $row[$relKey] = ($genderKey && $row[$genderKey] === 'Female') ? 'Daughter' : 'Son';
-            } else {
-                $row[$relKey] = 'Self'; // Safe default
-            }
-        }
 
         // Constraint: Nominee Contribution must be numeric 0-100
         $ncKey = $this->findKey($row, ['Nominee Contribution', 'nominee contribution']);
@@ -835,6 +856,40 @@ class FakeDataService
         if ($zoneKey && isset($row[$zoneKey]) && !in_array($row[$zoneKey], self::VALID_ZONES, true)) {
             $row[$zoneKey] = $this->faker->randomElement(self::VALID_ZONES);
         }
+
+        $relKey = $this->findKey($row, [
+            'Relationship with Employee',
+            'relationship with employee',
+            'Relationship With Insured',
+            'Relation Of Appointee With Nominee'
+        ]);
+        if (($row[$relKey] ?? '') === 'Self') {
+            $mirrors = [
+                'Insured Member First Name' => 'Employee First Name',
+                'Insured Member Last Name'  => 'Employee Last Name',
+                'Insured Member Gender'     => 'Employee Gender',
+                'Insured Member DOB'        => 'Employee DOB',
+            ];
+            foreach ($mirrors as $memberField => $empField) {
+                $memberKey = $this->findKey($row, [$memberField]);
+                $empKey    = $this->findKey($row, [$empField]);
+                if ($memberKey && $empKey && !empty($row[$empKey])) {
+                    $row[$memberKey] = $row[$empKey];
+                }
+            }
+        }
+
+
+        if ($relKey && isset($row[$relKey]) && !in_array($row[$relKey], self::VALID_RELATIONSHIPS, true)) {
+            // Map 'Child' to 'Daughter' or 'Son' based on gender
+            if ($row[$relKey] === 'Child') {
+                $genderKey = $this->findKey($row, ['Insured Member Gender', 'insured member gender']);
+                $row[$relKey] = ($genderKey && $row[$genderKey] === 'Female') ? 'Daughter' : 'Son';
+            } else {
+                $row[$relKey] = 'Self'; // Safe default
+            }
+        }
+
 
         return $row;
     }
@@ -961,6 +1016,9 @@ class FakeDataService
     protected function isEmployeeDobField(string $name): bool {
         return Str::contains($name, 'employee dob');
     }
+    protected function isMemberDobField(string $name): bool {
+        return Str::contains($name, 'member dob') || Str::contains($name, 'Insured Member DOB') || Str::contains($name, 'insured member dob');
+    }
     protected function isEmployeeDojField(string $name): bool {
         return Str::contains($name, 'employee date of joining') ||
                (Str::contains($name, 'doj') && Str::contains($name, 'employee'));
@@ -1058,8 +1116,9 @@ class FakeDataService
     protected function isStateField(string $name): bool {
         return Str::contains($name, 'state');
     }
-    protected function isPasswordField(string $name): bool {
-        return Str::contains($name, 'password');
+    protected function isPasswordField(string $name): bool
+    {
+        return str_contains($name, 'password');
     }
     protected function isSelfSiSelectionField(string $name): bool {
         return Str::contains($name, 'self si selection');
@@ -1132,7 +1191,14 @@ class FakeDataService
         }
 
         shuffle($password);
-        return implode('', $password);
+        $final = implode('', $password);
+
+        // 🔒 Prevent Excel formula interpretation
+        if (preg_match('/^[=+\-@]/', $final)) {
+            $final = 'A' . $final;
+        }
+        logger('Generated password: ' . $final);
+        return $final;
     }
 
     // =========================================================================
